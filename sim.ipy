@@ -1,0 +1,258 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+from iminuit import Minuit, cost
+from tqdm import tqdm
+
+SimTime = 3000 # 5 minutes in deciseconds
+GCD = 15 # decisecodns
+
+class Character:
+    
+    def __init__(self):
+        
+        self.WepMin, self.WepMax = 500, 600
+        self.AttackPower = 800
+        self.WeaponSkill = 5
+        self.HitChance = 4 # %
+        self.SpellHitChance = 0 # %
+        self.Haste = 4
+        
+        self.GlancingBlowDMG = 0.70 + self.WeaponSkill*0.02
+        self.GlancingBlowChance = 40 # %
+        
+        self.WepAttackSpeed = 36 * (1 - self.Haste/100)
+        self.AttackSpeed = self.WepAttackSpeed 
+        self.SwingTimer = 0
+        
+        self.MeleeCrit = 30 # %
+        self.SpellCrit = 5 # %
+        
+        self.MissChance = 5 - self.WeaponSkill*0.2 + self.HitChance
+        self.DodgeChance = 5 # %
+        self.SpellMissChance = 16 - self.SpellHitChance # %
+        self.SpellResistChance = 1 # %
+        
+        self.MeleeCritCount = 0
+        self.SpellCritCount = 0
+        
+        self.FlurryStacks = 0
+        self.MeleeAttackCount = 0
+ 
+        self.ES_CD = 0 
+        self.SS_CD = 0
+        self.LS_CD = 0
+        
+        self.FlurryUptime = 0
+        self.AutoAttackStats = {"Glancing Blow": 0, "Miss" : 0, "Dodge" : 0, "Crit" : 0}
+        self.DamageCount = {"Auto Attack" : 0, "Earth Shock" : 0, "Stormstrike" : 0, "Lightning Strike" : 0, "Lightning Shield" : 0}
+        
+    def DiceRoll(self):
+        return np.random.randint(1,101)
+        
+    def ActivateFlurry(self):
+        FlurryFactor = 0.80
+        if self.FlurryStacks == 0: self.AttackSpeed = self.WepAttackSpeed * FlurryFactor
+        self.FlurryStacks = 3
+        
+    def WeaponSwing(self):
+        WepDmg = np.random.randint(self.WepMin,self.WepMax)
+        return WepDmg
+        
+    def AutoAttack(self):
+        if self.FlurryStacks > 0: self.FlurryStacks -= 1
+        Damage = self.EvaluateWhiteAttack(self.WeaponSwing())
+        self.DamageCount["Auto Attack"] += Damage
+        self.SwingTimer = 0
+        return Damage
+    
+    def CriticalStrike(self, Damage, Type="Melee"):
+        match Type:
+            case "Melee":
+                if self.DiceRoll() <= self.MeleeCrit:
+                    Damage *= 2.0
+                    self.MeleeCritCount += 1
+                    self.ActivateFlurry()
+                    self.AutoAttackStats["Crit"] += 1
+            case "Spell":
+                if self.DiceRoll() <= self.SpellCrit:
+                    Damage *= 1.5
+                    self.SpellCritCount += 1  
+        return Damage
+
+    def EvaluateWhiteAttack(self,Damage):
+        if self.DiceRoll() <= self.DodgeChance:
+            Damage = 0
+            self.AutoAttackStats["Dodge"] += 1
+            return Damage
+        elif self.DiceRoll() <= self.MissChance:
+            Damage = 0 
+            self.AutoAttackStats["Miss"] += 1
+            return Damage
+        else: 
+            if self.DiceRoll() >= self.GlancingBlowChance:
+                Damage *= self.GlancingBlowDMG
+                self.AutoAttackStats["Glancing Blow"] += 1
+            else: 
+                Damage = self.CriticalStrike(Damage) 
+            self.Windfury()
+            return Damage
+        
+    def EvaluateYellowAttack(self,Damage):
+        if self.DiceRoll() <= self.DodgeChance:
+            Damage = 0
+            return Damage
+        elif self.DiceRoll() <= self.MissChance:
+            Damage = 0
+            return Damage
+        else: 
+            Damage = self.CriticalStrike(Damage) 
+            self.Windfury()
+            return Damage
+        
+    def EvaluateSpellAttack(self,Damage):
+        if self.DiceRoll() <= self.SpellMissChance:
+            Damage = 0
+            return Damage
+        elif self.DiceRoll() <= self.SpellResistChance:
+            Damage = 0
+            return Damage
+        else: 
+            Damage = self.CriticalStrike(Damage,"Spell")
+            return Damage
+
+    def Windfury(self):
+        WF_PROC = 20 # %
+        Damage = 0
+        if self.DiceRoll() <= WF_PROC:
+            Damage += self.EvaluateWhiteAttack(self.WeaponSwing())
+            Damage += self.EvaluateWhiteAttack(self.WeaponSwing())
+        self.DamageCount["Auto Attack"] += Damage
+        return Damage
+        
+    def EarthShock(self):
+        Damage = np.random.randint(517,546) + 0.10 * self.AttackPower
+        self.ES_CD = 50 
+        Damage = self.EvaluateSpellAttack(Damage)
+        self.DamageCount["Earth Shock"] += Damage
+        return Damage
+    
+    def StormStrike(self):
+        AttackCoef = 0.90
+        Damage = self.EvaluateYellowAttack(AttackCoef*self.WeaponSwing())
+        self.SS_CD = 85
+        self.DamageCount["Stormstrike"] += Damage
+        return Damage
+    
+    def LightningStrike(self):
+        AttackCoef = 0.88
+        self.LightningShield()
+        Damage = self.EvaluateYellowAttack(AttackCoef*self.WeaponSwing())
+        self.LS_CD = 95
+        self.DamageCount["Lightning Strike"] += Damage 
+        return Damage
+    
+    def LightningShield(self):
+        Damage = 198 + self.AttackPower/4 # 1 DMG per 4 AP
+        Damage = self.EvaluateSpellAttack(Damage)
+        self.DamageCount["Lightning Shield"] += Damage
+        return Damage
+    
+def simulate():
+    
+    Dolph = Character()
+    SS_Count, ES_Count, LS_Count = 0, 0, 0
+    GlobalCooldown = 0
+    
+    for t in range(SimTime):
+        
+        if Dolph.FlurryStacks == 0: Dolph.AttackSpeed = Dolph.WepAttackSpeed
+        else: Dolph.FlurryUptime += 1
+        
+        if Dolph.SwingTimer >= Dolph.AttackSpeed:
+            Dolph.AutoAttack()
+            
+        if (Dolph.SS_CD == 0 and GlobalCooldown == 0):
+            Dolph.StormStrike()
+            SS_Count += 1
+            GlobalCooldown = GCD
+            
+        if (Dolph.ES_CD == 0 and GlobalCooldown == 0):
+            Dolph.EarthShock()
+            ES_Count += 1
+            GlobalCooldown = GCD
+            
+        if (Dolph.LS_CD == 0 and GlobalCooldown == 0):
+            Dolph.LightningStrike()
+            LS_Count += 1
+            GlobalCooldown = GCD
+            
+        Dolph.SwingTimer += 1
+        
+        if Dolph.SS_CD > 0: Dolph.SS_CD -= 1
+        if Dolph.ES_CD > 0: Dolph.ES_CD -= 1
+        if Dolph.LS_CD > 0: Dolph.LS_CD -= 1
+        
+        if GlobalCooldown > 0: GlobalCooldown -= 1
+
+    TotalDPS = 0
+    for key in Dolph.DamageCount.keys():
+        Dolph.DamageCount[key] /= SimTime/10
+        TotalDPS += Dolph.DamageCount[key]
+    
+    return TotalDPS, Dolph.DamageCount, Dolph.AutoAttackStats 
+
+def Gaussian(x,N,mu,sigma):
+    return N * 1.0 / (np.sqrt(2*np.pi) * sigma) * np.exp( -0.5 * (x-mu)**2 / sigma**2)
+
+def main():
+    
+    NumSims = 1000
+    nbins = 30
+    sim_DPS   = np.zeros(NumSims)
+    sim_Crits = np.zeros(NumSims)
+    ES_DMG, SS_DMG, LS_DMG, Shield_DMG, AA_DMG, TOT_DMG = np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims)
+    for sim in tqdm(range(NumSims)):
+        
+        TotalDPS, DamageCounts, AA_Diag = simulate()
+        sim_DPS[sim] = TotalDPS
+        sim_Crits[sim] = CritChance
+        TOT_DMG[sim], AA_DMG[sim] = TotalDPS, DamageCounts["Auto Attack"]
+        ES_DMG[sim], SS_DMG[sim] = DamageCounts["Earth Shock"], DamageCounts["Stormstrike"]
+        LS_DMG[sim], Shield_DMG[sim] = DamageCounts["Lightning Strike"], DamageCounts["Lightning Shield"]
+    
+    counts, bin_edges = np.histogram(sim_DPS,bins=nbins)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    bin_centers = bin_centers[counts > 0]
+    counts = counts[counts > 0]
+    c = cost.LeastSquares(bin_centers,counts,np.sqrt(counts),Gaussian)
+    fit = Minuit(c,N=100,mu=np.mean(sim_DPS),sigma=np.std(sim_DPS,ddof=1))
+    fit.migrad()
+    
+    xaxis = np.linspace(min(sim_DPS),max(sim_DPS),1000)
+    
+    fig, ax = plt.subplots()
+    ax.plot(xaxis,Gaussian(xaxis,*fit.values),color="magenta")
+    ax.hist(sim_DPS,bins=nbins,color="darkturquoise",edgecolor="black")
+    ax.set_xlabel("DPS"   ,fontsize=15)
+    ax.set_ylabel("Counts",fontsize=15)
+    mean, std = fit.values["mu"], fit.values["sigma"]
+    plotinfo = [r"$\mu$ = " f"{mean:.0f}",
+                r"$\sigma$ = " + f"{std:.0f}" ,
+                r"$\chi^2 / N_{dof}$ = " + f"{fit.fval:.2f} / {fit.ndof}",
+                f"p-value: {stats.chi2.sf(fit.fval,fit.ndof):.2f}"]
+                
+    ax.text(0.6,0.7,"\n".join(plotinfo),transform=ax.transAxes,fontsize=11)
+    plt.tight_layout()
+    plt.savefig("Gaussian_DPS.png")
+    
+    fig, ax = plt.subplots()
+    Sources = np.array(["Total Damage", "Auto Attack", "Earth Shock", "Stormstrike", "Lightning Strike", "Lightning Shield"])
+    Colors = ["darkred","grey","yellow","dodgerblue","darkblue","darkturquoise"]
+    DamageDist = np.array([TOT_DMG.mean(), AA_DMG.mean(), ES_DMG.mean(), SS_DMG.mean(), LS_DMG.mean(), Shield_DMG.mean()])
+    ax.bar(Sources, DamageDist,color=Colors)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
+    plt.tight_layout()
+    plt.savefig("DPS_Dist.png")
+    
+main()

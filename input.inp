@@ -1,0 +1,16 @@
+
+NumberSims  : 100
+Time        : 60 
+
+WeaponDmg   : 190-293
+WepSpeed    : 3.6
+WeaponSkill : 5
+
+AttackPower : 900
+Haste       : 8
+
+MeleeHit    : 4
+MeleeCrit   : 25
+
+SpellHit    : 0
+SpellCrit   : 6

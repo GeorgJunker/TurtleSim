@@ -1,41 +1,39 @@
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 from iminuit import Minuit, cost
 from tqdm import tqdm
+import re
 
-SimTime = 60 # seconds
 GCD = 15 # decisecodns
 
 class Character:
     
-    def __init__(self):
+    def __init__(self, inputs):
         # total weapon damage = base weapon damage + (AP/14) * weapon speed
-        self.BaseWepMin, self.BaseWepMax = 190, 293
-        self.AttackPower = 994
-        self.WeaponSkill = 5
-        self.HitChance = 4 + self.WeaponSkill*0.2 # %
-        self.SpellHitChance = 0 # %
-        self.Haste = 8
+        self.BaseWepMin, self.BaseWepMax = inputs["WeaponDmg"][0], inputs["WeaponDmg"][1]
+        self.WepAttackSpeed = inputs["WepSpeed"] * 10
+        self.AttackPower = inputs["AttackPower"]
+        self.WeaponSkill = inputs["WeaponSkill"]
+        self.HitChance = inputs["MeleeHit"] + self.WeaponSkill*0.2 
+        self.SpellHitChance = inputs["SpellHit"] 
+        self.MeleeCrit = inputs["MeleeCrit"]
+        self.SpellCrit = inputs["SpellCrit"]
+        self.Haste = inputs["Haste"] 
         
 
         self.GlancingBlowDMG = 0.70 + self.WeaponSkill*0.02
         self.GlancingBlowChance = 40 # %
         
-        self.WepAttackSpeed = 36 
         self.WepDamage = (np.array([self.BaseWepMin,self.BaseWepMax]) + (self.AttackPower/14) * (self.WepAttackSpeed/10) )*1.1 # 10% increase from talents
         self.AttackSpeed = self.WepAttackSpeed 
         self.SwingTimer = 0
-        
-        self.MeleeCrit = 25 # %
-        self.SpellCrit = 6 # %
-        
+        # Level 63 mob 
         self.MissChance = 5 # %
         self.DodgeChance = 5 # %
         self.SpellMissChance = 16 # % 
         self.SpellResistChance = 1 # %
-        
-        self.MeleeAttackCount = 0
  
         self.ES_CD = 0 
         self.SS_CD = 0
@@ -84,17 +82,20 @@ class Character:
             if self.FlurryStacks == 0:
                 self.Flurry = False
                 self.CharacterInstance.Haste -= 20
+            else: self.BuffUptimes["Flurry"] += 1
 
         def checkStormStrikeBuff(self):
             if self.StormStrikeStacks == 0:
                 self.StormStrikeBuff = False
-        
+            else: self.BuffUptimes["StormStrike"] += 1
+
         def checkElementalStrength(self):
             if self.ElementalStrengthDuration == 0:
                 self.ElementalStrength = False
                 self.CharacterInstance.AttackPower -= 130
             else:
                 self.ElementalStrengthDuration -= 1
+                self.BuffUptimes["ElementalStrength"] += 1
         
         def checkRapidSpeed(self):
             if self.RapidSpeedDuration == 0:
@@ -102,6 +103,7 @@ class Character:
                 self.CharacterInstance.Haste -= 8
             else:
                 self.RapidSpeedDuration -= 1
+                self.BuffUptimes["RapidSpeed"] += 1
         
         def checkElementalDevastation(self):
             if self.ElementalDevastationDuration == 0:
@@ -109,6 +111,7 @@ class Character:
                 self.CharacterInstance.SpellHitChance -= 9
             else:
                 self.ElementalDevastationDuration -= 1
+                self.BuffUptimes["ElementalDevastation"] += 1
                
         def checkUnholyStrength(self):
             if self.UnholyStrengthDuration == 0:
@@ -116,6 +119,7 @@ class Character:
                 self.CharacterInstance.AttackPower -= (100*1.05)*2 
             else:
                 self.UnholyStrengthDuration -= 1
+                self.BuffUptimes["UnholyStrength"] += 1
         
         def procFlurry(self):
             if self.Flurry: 
@@ -159,7 +163,7 @@ class Character:
                 self.CharacterInstance.SpellHitChance += 9
             
         def procUnholyStrength(self):
-            if self.CharacterInstance.DiceRoll() <= self.CharacterInstance.WepAttackSpeed*1.82:
+            if self.CharacterInstance.DiceRoll() <= (self.CharacterInstance.WepAttackSpeed/10)*1.82:
                 if self.UnholyStrength:
                     self.UnholyStrengthDuration = 150
                 else:
@@ -284,12 +288,12 @@ class Character:
         self.DamageCount["Lightning Shield"] += Damage
         return Damage
     
-def simulate():
+def simulate(inputs):
     
-    Dolph = Character()
+    Dolph = Character(inputs)
     SS_Count, ES_Count, LS_Count = 0, 0, 0
     GlobalCooldown = 0
-
+    SimTime = inputs["Time"]
     SimTime_Deciseconds = SimTime*10
     
     for t in range(SimTime_Deciseconds):
@@ -328,21 +332,37 @@ def simulate():
         Dolph.DamageCount[key] /= SimTime_Deciseconds/10
         TotalDPS += Dolph.DamageCount[key]
     
-    return TotalDPS, Dolph.DamageCount, Dolph.AutoAttackStats 
+    return TotalDPS, Dolph.DamageCount, Dolph.AutoAttackStats, Dolph.CharacterBuffs.BuffUptimes
 
 def Gaussian(x,N,mu,sigma):
     return N * 1.0 / (np.sqrt(2*np.pi) * sigma) * np.exp( -0.5 * (x-mu)**2 / sigma**2)
 
+
+def extract_info(filename):
+    data = {}
+    with open(filename, 'r') as file:
+        for line in file:
+            match = re.match(r"(\w+)\s*:\s*([\d-]+)", line)
+            if match:
+                key, value = match.groups()
+                if '-' in value:
+                    data[key] = tuple(map(int, value.split('-')))
+                else:
+                    data[key] = int(value)
+    return data
+
+
 def main():
-    
-    NumSims = 1000
+    inputs = extract_info(sys.argv[1])
+    NumSims = inputs["NumberSims"]
+    SimTime = inputs["Time"]
     nbins = 30
     sim_DPS   = np.zeros(NumSims)
     sim_Crits = np.zeros(NumSims)
     ES_DMG, SS_DMG, LS_DMG, Shield_DMG, AA_DMG, TOT_DMG = np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims)
     for sim in tqdm(range(NumSims)):
         
-        TotalDPS, DamageCounts, AA_Diag = simulate()
+        TotalDPS, DamageCounts, AA_Diag, BuffUptimes = simulate(inputs)
         sim_DPS[sim] = TotalDPS
         sim_Crits[sim] = AA_Diag["Crit"]
         TOT_DMG[sim], AA_DMG[sim] = TotalDPS, DamageCounts["Auto Attack"]
@@ -358,7 +378,9 @@ def main():
     fit.migrad()
     
     xaxis = np.linspace(min(sim_DPS),max(sim_DPS),1000)
-    
+    divided_values = {key: value / (SimTime*10) for key, value in BuffUptimes.items()}
+
+    print(divided_values)
     fig, ax = plt.subplots()
     ax.plot(xaxis,Gaussian(xaxis,*fit.values),color="magenta")
     ax.hist(sim_DPS,bins=nbins,color="darkturquoise",edgecolor="black")

@@ -8,48 +8,70 @@ import re
 
 GCD = 15 # decisecodns
 
+class Boss:
+    def __init__(self, Stats):
+        self.Armor = 3700
+        self.Level = 63
+        self.SpellResistance = 0
+        self.GlancingBlowChance = 0
+
+        if Stats["Armor"] is not None: self.Armor = Stats["Armor"]
+        if Stats["Level"] is not None: self.Level = Stats["Level"]
+        if Stats["Resistance"] is not None: self.SpellResistance = Stats["Resistance"]
+
+        self.DefenseSkill = 300 + (self.Level - 60) * 5
+        self.PhysReduc =  self.Armor / ( self.Armor + 400 + 85 * self.Level)
+        self.Dodge = 5 + (self.DefenseSkill - 300) * 0.2
+        self.Miss  = 5 + (self.DefenseSkill - 300) * 0.2
+
+        match(self.Level):
+            case(60):
+                self.SpellMiss = 4
+            case(61):
+                self.SpellMiss = 5
+            case(62):
+                self.SpellMiss = 6
+            case(63):
+                self.SpellMiss = 17
+                self.GlancingBlowChance = 40
+
 class Character:
     
-    def __init__(self, inputs):
-        # total weapon damage = base weapon damage + (AP/14) * weapon speed
-        self.BaseWepMin, self.BaseWepMax = inputs["WeaponDmg"][0], inputs["WeaponDmg"][1]
-        self.WepAttackSpeed = inputs["WepSpeed"] * 10
-        self.AttackPower = inputs["AttackPower"]
-        self.WeaponSkill = inputs["WeaponSkill"]
-        self.HitChance = inputs["MeleeHit"] + self.WeaponSkill*0.2 
-        self.SpellHitChance = inputs["SpellHit"] 
-        self.MeleeCrit = inputs["MeleeCrit"]
-        self.SpellCrit = inputs["SpellCrit"]
-        self.Haste = inputs["Haste"] 
+    def __init__(self, Target, Stats, Weapon, Talents, SetBonuses):
+        # Set default values
+        self.BaseWepMin, self.BaseWepMax = 1, 2
+        self.WepAttackSpeed = 0
+        self.AttackPower    = 0
+        self.WeaponSkill    = 0
+        self.HitChance      = 0
+        self.SpellHitChance = 0
+        self.MeleeCrit      = 0
+        self.SpellCrit      = 0
+        self.Haste          = 0
         
-
-        self.GlancingBlowDMG = 0.70 + self.WeaponSkill*0.02
-        self.GlancingBlowChance = 40 # %
+        self.initialize_stats(Stats)
+        self.initialize_weapon(Weapon)
+        self.initialize_talents(Talents)
         
-        self.WepDamage = (np.array([self.BaseWepMin,self.BaseWepMax]) + (self.AttackPower/14) * (self.WepAttackSpeed/10) )*1.1 # 10% increase from talents
+        # Initialize dynamic variables
+        self.WepDamage = (np.array([self.BaseWepMin,self.BaseWepMax]) + (self.AttackPower/14) * (self.WepAttackSpeed/10) ) * 1.1 # 10% increase from talents
         self.AttackSpeed = self.WepAttackSpeed 
-        self.SwingTimer = 0
-        # Level 63 mob 
-        self.MissChance = 5 # %
-        self.DodgeChance = 5 # %
-        self.SpellMissChance = 16 # % 
-        self.SpellResistChance = 1 # %
- 
-        self.ES_CD = 0 
-        self.SS_CD = 0
-        self.LS_CD = 0
+
+        # Update combat stats against target 
+        self.MissChance = Target.Miss - (self.HitChance + self.WeaponSkill * 0.2 + 3)
+        self.DodgeChance = Target.Dodge 
+        self.SpellMissChance = Target.SpellMiss - self.SpellHitChance
+        self.SpellResistChance = Target.SpellResistance
+        self.GlancingBlowDMG = 0.70 + self.WeaponSkill*0.2
+        self.GlancingBlowChance = Target.GlancingBlowChance
+        self.ReducedPhysDmg = (1 - Target.PhysReduc)
 
         self.CharacterBuffs = self.Buffs(self)
-        
-        self.FlurryUptime = 0
-        self.AutoAttackStats = {"Glancing Blow": 0, "Miss" : 0, "Dodge" : 0, "Crit" : 0}
-        self.DamageCount = {"Auto Attack" : 0, "Earth Shock" : 0, "Stormstrike" : 0, "Lightning Strike" : 0, "Lightning Shield" : 0}
+        self.CharacterAttacks = self.Attacks(self)
 
-    def UpdateStats(self):
-        self.WepDamage = (np.array([self.BaseWepMin,self.BaseWepMax]) + (self.AttackPower/14) * (self.WepAttackSpeed/10) )*1.1 # 10% increase from talents
-        self.AttackSpeed = self.WepAttackSpeed * (1 - self.Haste/100) 
+        self.UpdateStats()
 
-    class Buffs():
+    class Buffs:
         def __init__(self, CharacterInput):
             self.CharacterInstance = CharacterInput
 
@@ -171,129 +193,172 @@ class Character:
                     self.UnholyStrengthDuration = 150
                     self.CharacterInstance.AttackPower += (100*1.05)*2
 
+    class Talents:
+        def __init__(self, CharacterInput):
+            self.CharacterInstance = CharacterInput
+            # ELEMENTAL 
+            self.Conussion = False
+            self.Reverberation = False
+            # ENHANCEMENT
+            self.WeaponMastery = False
+
+            # RESTORATION ?
+
+    class ItemsAndEnchants:
+        def __init__(self, CharacterInput):
+            self.CharacterInstance = CharacterInput
+
+    class Attacks:
+
+        def __init__(self, CharacterInput):
+            self.CharacterInstance = CharacterInput
+            self.SwingTimer = 0
+            self.AutoAttackStats = {"Glancing Blow": 0, "Miss" : 0, "Dodge" : 0, "Crit" : 0}
+            self.DamageCount = {"Auto Attack" : 0, "Earth Shock" : 0, "Stormstrike" : 0, "Lightning Strike" : 0, "Lightning Shield" : 0}
+            self.Cooldowns = {"Earth Shock" : 0, "Stormstrike" : 0, "Lightning Strike" : 0}
+
+        def WeaponSwing(self):
+            WepDmg = np.random.randint(self.CharacterInstance.WepDamage[0],self.CharacterInstance.WepDamage[1])
+            return WepDmg
         
+        def CriticalStrike(self, Damage, Type="Melee"):
+            match Type:
+                case "Melee":
+                    if self.CharacterInstance.DiceRoll() <= self.CharacterInstance.MeleeCrit:
+                        Damage *= 2.0
+                        self.CharacterInstance.CharacterBuffs.procFlurry()
+                        self.CharacterInstance.CharacterBuffs.procElementalDevastation()
+                        self.AutoAttackStats["Crit"] += 1
+                case "Spell":
+                    if self.CharacterInstance.DiceRoll() <= self.CharacterInstance.SpellCrit:
+                        Damage *= 1.5
+            return Damage
+
+        def EvaluateWhiteAttack(self,Damage):
+            if self.CharacterInstance.DiceRoll() <= self.CharacterInstance.DodgeChance:
+                Damage = 0
+                self.AutoAttackStats["Dodge"] += 1
+            elif self.CharacterInstance.DiceRoll() <= (self.CharacterInstance.MissChance):
+                Damage = 0 
+                self.AutoAttackStats["Miss"] += 1
+            else: 
+                self.CharacterInstance.CharacterBuffs.procUnholyStrength()
+                if self.CharacterInstance.DiceRoll() >= self.CharacterInstance.GlancingBlowChance:
+                    Damage *= self.CharacterInstance.GlancingBlowDMG
+                    self.AutoAttackStats["Glancing Blow"] += 1
+                else: 
+                    Damage = self.CriticalStrike(Damage) 
+            return Damage * self.CharacterInstance.ReducedPhysDmg
+            
+        def EvaluateYellowAttack(self,Damage):
+            if self.CharacterInstance.DiceRoll() <= self.CharacterInstance.DodgeChance:
+                Damage = 0
+            elif self.CharacterInstance.DiceRoll() <= (self.CharacterInstance.MissChance ):
+                Damage = 0
+            else: 
+                self.CharacterInstance.CharacterBuffs.procUnholyStrength()
+                Damage = self.CriticalStrike(Damage) 
+                self.Windfury()
+            return Damage * self.CharacterInstance.ReducedPhysDmg
+            
+        def EvaluateSpellAttack(self,Damage):
+            if self.CharacterInstance.DiceRoll() <= (self.CharacterInstance.SpellMissChance):
+                Damage = 0
+            elif self.CharacterInstance.DiceRoll() <= self.CharacterInstance.SpellResistChance:
+                Damage = 0
+            else: 
+                Damage = self.CriticalStrike(Damage,"Spell")
+            return Damage
+        
+        def AutoAttack(self):
+            if self.CharacterInstance.CharacterBuffs.Flurry: self.CharacterInstance.CharacterBuffs.FlurryStacks -= 1
+            Damage = self.EvaluateWhiteAttack(self.WeaponSwing())
+            if Damage != 0: self.Windfury()
+            self.DamageCount["Auto Attack"] += Damage
+            self.SwingTimer = 0
+            return Damage
+        
+        def Windfury(self):
+            WF_PROC = 20 # %
+            Damage = 0
+            if self.CharacterInstance.DiceRoll() <= WF_PROC:
+                self.CharacterInstance.AttackPower += 323
+                self.CharacterInstance.UpdateStats()
+                Damage += self.EvaluateWhiteAttack(self.WeaponSwing())
+                Damage += self.EvaluateWhiteAttack(self.WeaponSwing())
+                self.CharacterInstance.AttackPower -= 323
+                self.CharacterInstance.UpdateStats()
+            self.DamageCount["Auto Attack"] += Damage
+            return Damage
+            
+        def EarthShock(self):
+            DmgAmp = 1.0
+            if self.CharacterInstance.CharacterBuffs.StormStrikeBuff:
+                DmgAmp = 1.20
+                self.CharacterInstance.CharacterBuffs.StormStrikeStacks -= 1
+            Damage = (np.random.randint(517,546) + (0.10 * self.CharacterInstance.AttackPower)) * DmgAmp
+            self.Cooldowns["Earth Shock"] = 50 
+            self.CharacterInstance.CharacterBuffs.procElementalStrength()
+            Damage = self.EvaluateSpellAttack(Damage)
+            self.DamageCount["Earth Shock"] += Damage
+            return Damage
+        
+        def StormStrike(self):
+            AttackCoef = 1.11
+            self.CharacterInstance.CharacterBuffs.procStormStrikeBuff()
+            Damage = self.EvaluateYellowAttack(AttackCoef*self.WeaponSwing())
+            self.Cooldowns["Stormstrike"] = 75
+            self.DamageCount["Stormstrike"] += Damage
+            return Damage
+        
+        def LightningStrike(self):
+            AttackCoef = 0.88
+            self.CharacterInstance.CharacterBuffs.procRapidSpeed()
+            self.PopLightningShield()
+            Damage = self.EvaluateYellowAttack(AttackCoef*self.WeaponSwing())
+            self.Cooldowns["Lightning Strike"] = 85
+            self.DamageCount["Lightning Strike"] += Damage 
+            return Damage
+        
+        def PopLightningShield(self):
+            DmgAmp = 1.0
+            if self.CharacterInstance.CharacterBuffs.StormStrikeBuff:
+                DmgAmp = 1.20
+                self.CharacterInstance.CharacterBuffs.StormStrikeStacks -= 1
+            Damage = (198 + self.CharacterInstance.AttackPower/4) * DmgAmp
+            Damage = self.EvaluateSpellAttack(Damage)
+            self.DamageCount["Lightning Shield"] += Damage
+            return Damage
+
     def DiceRoll(self):
         return np.random.randint(1,101)
-        
-    def WeaponSwing(self):
-        WepDmg = np.random.randint(self.WepDamage[0],self.WepDamage[1])
-        return WepDmg
-        
-    def AutoAttack(self):
-        if self.CharacterBuffs.Flurry: self.CharacterBuffs.FlurryStacks -= 1
-        Damage = self.EvaluateWhiteAttack(self.WeaponSwing())
-        if Damage != 0: self.Windfury()
-        self.DamageCount["Auto Attack"] += Damage
-        self.SwingTimer = 0
-        return Damage
     
-    def CriticalStrike(self, Damage, Type="Melee"):
-        match Type:
-            case "Melee":
-                if self.DiceRoll() <= self.MeleeCrit:
-                    Damage *= 2.0
-                    self.CharacterBuffs.procFlurry()
-                    self.CharacterBuffs.procElementalDevastation()
-                    self.AutoAttackStats["Crit"] += 1
-            case "Spell":
-                if self.DiceRoll() <= self.SpellCrit:
-                    Damage *= 1.5
-        return Damage
+    def initialize_stats(self, Stats):
+        if Stats["AttackPower"] is not None: self.AttackPower = Stats["AttackPower"]
+        if Stats["Haste"] is not None: self.Haste = Stats["Haste"]
+        if Stats["MeleeHit"] is not None: self.HitChance = Stats["MeleeHit"]
+        if Stats["MeleeCrit"] is not None: self.MeleeCrit = Stats["MeleeCrit"]
+        if Stats["SpellHit"] is not None: self.SpellHit = Stats["SpellHit"]
+        if Stats["SpellCrit"] is not None: self.SpellCrit = Stats["SpellCrit"]
 
-    def EvaluateWhiteAttack(self,Damage):
-        if self.DiceRoll() <= self.DodgeChance:
-            Damage = 0
-            self.AutoAttackStats["Dodge"] += 1
-        elif self.DiceRoll() <= (self.MissChance - self.HitChance):
-            Damage = 0 
-            self.AutoAttackStats["Miss"] += 1
-        else: 
-            self.CharacterBuffs.procUnholyStrength()
-            if self.DiceRoll() >= self.GlancingBlowChance:
-                Damage *= self.GlancingBlowDMG
-                self.AutoAttackStats["Glancing Blow"] += 1
-            else: 
-                Damage = self.CriticalStrike(Damage) 
-        return Damage
-        
-    def EvaluateYellowAttack(self,Damage):
-        if self.DiceRoll() <= self.DodgeChance:
-            Damage = 0
-        elif self.DiceRoll() <= (self.MissChance - self.HitChance):
-            Damage = 0
-        else: 
-            self.CharacterBuffs.procUnholyStrength()
-            Damage = self.CriticalStrike(Damage) 
-            self.Windfury()
-        return Damage
-        
-    def EvaluateSpellAttack(self,Damage):
-        if self.DiceRoll() <= (self.SpellMissChance - self.SpellHitChance):
-            Damage = 0
-        elif self.DiceRoll() <= self.SpellResistChance:
-            Damage = 0
-        else: 
-            Damage = self.CriticalStrike(Damage,"Spell")
-        return Damage
+    def initialize_weapon(self, Weapon):
+        if Weapon["WeaponDmg"] is not None: self.BaseWepMin, self.BaseWepMax = Weapon["WeaponDmg"][0], Weapon["WeaponDmg"][1]
+        if Weapon["WepSpeed"] is not None: self.WepAttackSpeed = Weapon["WepSpeed"] * 10
+        if Weapon["WeaponSkill"] is not None: self.WeaponSkill = Weapon["WeaponSkill"]
 
-    def Windfury(self):
-        WF_PROC = 20 # %
-        Damage = 0
-        if self.DiceRoll() <= WF_PROC:
-            self.AttackPower += 323
-            self.UpdateStats()
-            Damage += self.EvaluateWhiteAttack(self.WeaponSwing())
-            Damage += self.EvaluateWhiteAttack(self.WeaponSwing())
-            self.AttackPower -= 323
-            self.UpdateStats()
-        self.DamageCount["Auto Attack"] += Damage
-        return Damage
+    def initialize_talents(self, Talents):
+        return
         
-    def EarthShock(self):
-        DmgAmp = 1.0
-        if self.CharacterBuffs.StormStrikeBuff:
-            DmgAmp = 1.20
-            self.CharacterBuffs.StormStrikeStacks -= 1
-        Damage = (np.random.randint(517,546) + 0.10 * self.AttackPower) * DmgAmp
-        self.ES_CD = 50 
-        self.CharacterBuffs.procElementalStrength()
-        Damage = self.EvaluateSpellAttack(Damage)
-        self.DamageCount["Earth Shock"] += Damage
-        return Damage
-    
-    def StormStrike(self):
-        AttackCoef = 1.11
-        self.CharacterBuffs.procStormStrikeBuff()
-        Damage = self.EvaluateYellowAttack(AttackCoef*self.WeaponSwing())
-        self.SS_CD = 75
-        self.DamageCount["Stormstrike"] += Damage
-        return Damage
-    
-    def LightningStrike(self):
-        AttackCoef = 0.88
-        self.CharacterBuffs.procRapidSpeed()
-        self.PopLightningShield()
-        Damage = self.EvaluateYellowAttack(AttackCoef*self.WeaponSwing())
-        self.LS_CD = 85
-        self.DamageCount["Lightning Strike"] += Damage 
-        return Damage
-    
-    def PopLightningShield(self):
-        DmgAmp = 1.0
-        if self.CharacterBuffs.StormStrikeBuff:
-            DmgAmp = 1.20
-            self.CharacterBuffs.StormStrikeStacks -= 1
-        Damage = (198 + self.AttackPower/4) * DmgAmp
-        Damage = self.EvaluateSpellAttack(Damage)
-        self.DamageCount["Lightning Shield"] += Damage
-        return Damage
+    def UpdateStats(self):
+        self.WepDamage = (np.array([self.BaseWepMin,self.BaseWepMax]) + (self.AttackPower/14) * (self.WepAttackSpeed/10) )*1.1 # 10% increase from talents
+        self.AttackSpeed = self.WepAttackSpeed * (1 - self.Haste/100) 
     
 def simulate(inputs):
-    
-    Dolph = Character(inputs)
+    Target = Boss(inputs["TargetStats"])
+    Dolph = Character(Target, inputs["Stats"],inputs["Weapon"],inputs["Talents"],inputs["SetBonuses"])
     SS_Count, ES_Count, LS_Count = 0, 0, 0
     GlobalCooldown = 0
-    SimTime = inputs["Time"]
+    SimTime = inputs["Sim"]["Time"]
     SimTime_Deciseconds = SimTime*10
     
     for t in range(SimTime_Deciseconds):
@@ -301,61 +366,79 @@ def simulate(inputs):
         Dolph.CharacterBuffs.checkBuffs()
         Dolph.UpdateStats()
         
-        if Dolph.SwingTimer >= Dolph.AttackSpeed:
-            Dolph.AutoAttack()
+        if Dolph.CharacterAttacks.SwingTimer >= Dolph.AttackSpeed:
+            Dolph.CharacterAttacks.AutoAttack()
             
-        if (Dolph.SS_CD == 0 and GlobalCooldown == 0):
-            Dolph.StormStrike()
+        if (Dolph.CharacterAttacks.Cooldowns["Stormstrike"] == 0 and GlobalCooldown == 0):
+            Dolph.CharacterAttacks.StormStrike()
             SS_Count += 1
             GlobalCooldown = GCD
             
-        if (Dolph.ES_CD == 0 and GlobalCooldown == 0):
-            Dolph.EarthShock()
+        if (Dolph.CharacterAttacks.Cooldowns["Earth Shock"] == 0 and GlobalCooldown == 0):
+            Dolph.CharacterAttacks.EarthShock()
             ES_Count += 1
             GlobalCooldown = GCD
             
-        if (Dolph.LS_CD == 0 and GlobalCooldown == 0):
-            Dolph.LightningStrike()
+        if (Dolph.CharacterAttacks.Cooldowns["Lightning Strike"] == 0 and GlobalCooldown == 0):
+            Dolph.CharacterAttacks.LightningStrike()
             LS_Count += 1
             GlobalCooldown = GCD
             
-        Dolph.SwingTimer += 1
+        Dolph.CharacterAttacks.SwingTimer += 1
         
-        if Dolph.SS_CD > 0: Dolph.SS_CD -= 1
-        if Dolph.ES_CD > 0: Dolph.ES_CD -= 1
-        if Dolph.LS_CD > 0: Dolph.LS_CD -= 1
+        if Dolph.CharacterAttacks.Cooldowns["Stormstrike"] > 0: Dolph.CharacterAttacks.Cooldowns["Stormstrike"] -= 1
+        if Dolph.CharacterAttacks.Cooldowns["Earth Shock"] > 0: Dolph.CharacterAttacks.Cooldowns["Earth Shock"] -= 1
+        if Dolph.CharacterAttacks.Cooldowns["Lightning Strike"]> 0: Dolph.CharacterAttacks.Cooldowns["Lightning Strike"]-= 1
         
         if GlobalCooldown > 0: GlobalCooldown -= 1
 
     TotalDPS = 0
-    for key in Dolph.DamageCount.keys():
-        Dolph.DamageCount[key] /= SimTime_Deciseconds/10
-        TotalDPS += Dolph.DamageCount[key]
+    for key in Dolph.CharacterAttacks.DamageCount.keys():
+        Dolph.CharacterAttacks.DamageCount[key] /= SimTime_Deciseconds/10
+        TotalDPS += Dolph.CharacterAttacks.DamageCount[key]
     
-    return TotalDPS, Dolph.DamageCount, Dolph.AutoAttackStats, Dolph.CharacterBuffs.BuffUptimes
+    return TotalDPS, Dolph.CharacterAttacks.DamageCount, Dolph.CharacterAttacks.AutoAttackStats, Dolph.CharacterBuffs.BuffUptimes
 
 def Gaussian(x,N,mu,sigma):
     return N * 1.0 / (np.sqrt(2*np.pi) * sigma) * np.exp( -0.5 * (x-mu)**2 / sigma**2)
 
 
-def extract_info(filename):
-    data = {}
-    with open(filename, 'r') as file:
+def read_input(file):
+    sections = {}
+    current_section = None
+    with open(file, 'r') as file:
         for line in file:
-            match = re.match(r"(\w+)\s*:\s*([\d-]+)", line)
-            if match:
-                key, value = match.groups()
-                if '-' in value:
-                    data[key] = tuple(map(int, value.split('-')))
-                else:
-                    data[key] = int(value)
-    return data
+            line = line.strip()
+            if re.match(r'^@\w+', line):
+                current_section = line[1:].strip()
+                sections[current_section] = {}
+            elif line == '@':
+                current_section = None  # End of a section
+            elif current_section:
+                match = re.match(r'^(.*?):\s*(.*)$', line)
+                if match:
+                    key, value = match.groups()
+                    key = key.strip()
+                    value = value.strip()
+                    if "-" in value:
+                        value = [int(x) for x in value.split("-")]
+                    # Convert value to int or float if possible
+                    elif re.match(r'^\d+$', value):
+                        value = int(value)
+                    elif re.match(r'^\d+\.\d+$', value):
+                        value = float(value)
+                    
+                    sections[current_section][key] = value if value else None
+    
+    return sections
+
 
 
 def main():
-    inputs = extract_info(sys.argv[1])
-    NumSims = inputs["NumberSims"]
-    SimTime = inputs["Time"]
+    inputs = read_input(sys.argv[1])
+    print(inputs)
+    NumSims = inputs["Sim"]["NumberSims"]
+    SimTime = inputs["Sim"]["Time"]
     nbins = 30
     sim_DPS   = np.zeros(NumSims)
     sim_Crits = np.zeros(NumSims)
@@ -405,4 +488,5 @@ def main():
     plt.tight_layout()
     plt.savefig("DPS_Dist.png")
     
-main()
+if __name__ == "__main__":
+    main()

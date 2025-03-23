@@ -2,11 +2,17 @@
 
 **Install guide**: 
 
-To install the TurtleSim shaman simulator run the following commands in your terminal:
+Download the repository as a Zip-file or if you have Git you can run the following command in a terminal:
 
     git clone https://github.com/GeorgJunker/TurtleSim.git
 
-    cd ./TurtleSim
+You now need to extract the Zip-file (don't mind this if you git cloned).
+
+Open up a terminal window and navigate into the TurtleSim folder.
+
+    cd path/to/TurtleSim
+
+In your terminal run the following command while inside the main directory:
 
     pip install .
 

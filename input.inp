@@ -1,19 +1,20 @@
 @Sim
-NumberSims  : 1000
-Time        : 60 
+NumberSims  : 100
+Time        : 120
 @
 
 @Weapon
-WeaponDmg   : 190-293
-WepSpeed    : 3.6
-WeaponSkill : 5
+WeaponDmg   : 202-303
+WepSpeed    : 3.7
+WeaponSkill : 8
+Imbue       : Windfury
 @
 
 @Stats
 AttackPower : 1000
 Haste       : 8
 MeleeHit    : 4
-MeleeCrit   : 30
+MeleeCrit   : 25
 SpellHit    : 0
 SpellCrit   : 6
 @

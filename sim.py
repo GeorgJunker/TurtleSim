@@ -24,14 +24,14 @@ class Boss:
         self.Dodge = 5 + (self.DefenseSkill - 300) * 0.2
         self.Miss  = 5 + (self.DefenseSkill - 300) * 0.2
 
-        match(self.Level):
-            case(60):
+        match self.Level:
+            case 60:
                 self.SpellMiss = 4
-            case(61):
+            case 61:
                 self.SpellMiss = 5
-            case(62):
+            case 62:
                 self.SpellMiss = 6
-            case(63):
+            case 63:
                 self.SpellMiss = 17
                 self.GlancingBlowChance = 40
 

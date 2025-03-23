@@ -1,6 +1,10 @@
-import os
-import numpy as np
+import os, sys
 import re
+try:
+    import numpy as np
+except ImportError:
+    print("Numpy is not installed.")
+    quit()
 
 GCD = 15 # decisecodns
 
@@ -582,46 +586,42 @@ def find_inp_files():
     return inp_files
 
 def main():
-    arguments = find_inp_files()
-    for arg in arguments:
-        outputfile = arg[:-4] + ".out"
-        inputs = read_input(arg)
-        NumSims = inputs["Sim"]["NumberSims"]
-        SimTime = inputs["Sim"]["Time"]
-
-        savedResults = {}
+    #arguments = find_inp_files()
+    arg = sys.argv[1]
+    outputfile = arg[:-4] + ".out"
+    inputs = read_input(arg)
+    NumSims = inputs["Sim"]["NumberSims"]
+    SimTime = inputs["Sim"]["Time"]
+    savedResults = {}
+    for sim in range(NumSims):
+        Dolph = simulate(inputs)
+        savedResults[sim] = Dolph
+    keys = Dolph.CharacterAttacks.DamageCount.keys()
+    meanDPS = {"Total DPS" : np.zeros(2)}
+    for key in keys:
+        nums = np.zeros(NumSims)
         for sim in range(NumSims):
-            Dolph = simulate(inputs)
-            savedResults[sim] = Dolph
+            nums[sim] = savedResults[sim].CharacterAttacks.DamageCount[key]
+        meanDPS[key] = np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)])
+        meanDPS["Total DPS"] += np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)**2])
+    meanDPS["Total DPS"][1] = np.sqrt(meanDPS["Total DPS"][1])
 
-        keys = Dolph.CharacterAttacks.DamageCount.keys()
-        meanDPS = {"Total DPS" : np.zeros(2)}
-        for key in keys:
-            nums = np.zeros(NumSims)
-            for sim in range(NumSims):
-                nums[sim] = savedResults[sim].CharacterAttacks.DamageCount[key]
-            meanDPS[key] = np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)])
-            meanDPS["Total DPS"] += np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)**2])
-        meanDPS["Total DPS"][1] = np.sqrt(meanDPS["Total DPS"][1])
-
-        keys = Dolph.CharacterBuffs.BuffUptimes.keys()
-        meanBuffUptimes = {}
-        for key in keys:
-            nums = np.zeros(NumSims)
-            for sim in range(NumSims):
-                nums[sim] = savedResults[sim].CharacterBuffs.BuffUptimes[key] / (SimTime*10) * 100
-            meanBuffUptimes[key] = np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)])
-
-        keys = Dolph.CharacterAttacks.AutoAttackStats.keys()
-        meanAAs = {}
-        for key in keys:
-            nums = np.zeros(NumSims)
-            for sim in range(NumSims):
-                nums[sim] = savedResults[sim].CharacterAttacks.AutoAttackStats[key] / savedResults[sim].CharacterAttacks.AttemptedHits["White Attacks"] * 100
-                                                    
-            meanAAs[key] = np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)])
-    
-        write2file(outputfile, NumSims, SimTime, meanDPS, meanBuffUptimes, meanAAs)
+    keys = Dolph.CharacterBuffs.BuffUptimes.keys()
+    meanBuffUptimes = {}
+    for key in keys:
+        nums = np.zeros(NumSims)
+        for sim in range(NumSims):
+            nums[sim] = savedResults[sim].CharacterBuffs.BuffUptimes[key] / (SimTime*10) * 100
+        meanBuffUptimes[key] = np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)])
+    keys = Dolph.CharacterAttacks.AutoAttackStats.keys()
+    meanAAs = {}
+    for key in keys:
+        nums = np.zeros(NumSims)
+        for sim in range(NumSims):
+            nums[sim] = savedResults[sim].CharacterAttacks.AutoAttackStats[key] / savedResults[sim].CharacterAttacks.AttemptedHits["White Attacks"] * 100
+                                                
+        meanAAs[key] = np.array([np.mean(nums), np.std(nums, ddof=1)/np.sqrt(NumSims)])
+    write2file(outputfile, NumSims, SimTime, meanDPS, meanBuffUptimes, meanAAs)
     
 if __name__ == "__main__":
     main()

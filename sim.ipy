@@ -10,7 +10,7 @@ GCD = 15 # decisecodns
 
 class Boss:
     def __init__(self, Stats):
-        self.Armor = 3700
+        self.Armor = 3500
         self.Level = 63
         self.SpellResistance = 0
         self.GlancingBlowChance = 0
@@ -42,20 +42,21 @@ class Character:
         self.BaseWepMin, self.BaseWepMax = 1, 2
         self.WepAttackSpeed = 0
         self.AttackPower    = 0
+        self.SpellPower     = 0
         self.WeaponSkill    = 0
         self.HitChance      = 0
         self.SpellHitChance = 0
         self.MeleeCrit      = 0
         self.SpellCrit      = 0
         self.Haste          = 0
+        self.WepImbue = "Windfury"
+        
+        self.CharacterBuffs = self.Buffs(self)
+        self.CharacterAttacks = self.Attacks(self)
         
         self.initialize_stats(Stats)
         self.initialize_weapon(Weapon)
         self.initialize_talents(Talents)
-        
-        # Initialize dynamic variables
-        self.WepDamage = (np.array([self.BaseWepMin,self.BaseWepMax]) + (self.AttackPower/14) * (self.WepAttackSpeed/10) ) * 1.1 # 10% increase from talents
-        self.AttackSpeed = self.WepAttackSpeed 
 
         # Update combat stats against target 
         self.MissChance = Target.Miss - (self.HitChance + self.WeaponSkill * 0.2 + 3)
@@ -65,9 +66,6 @@ class Character:
         self.GlancingBlowDMG = 0.70 + self.WeaponSkill*0.2
         self.GlancingBlowChance = Target.GlancingBlowChance
         self.ReducedPhysDmg = (1 - Target.PhysReduc)
-
-        self.CharacterBuffs = self.Buffs(self)
-        self.CharacterAttacks = self.Attacks(self)
 
         self.UpdateStats()
 
@@ -81,6 +79,8 @@ class Character:
             self.RapidSpeed = False
             self.ElementalDevastation = False
             self.UnholyStrength = False
+            self.Bloodlust = False
+            self.CritBloodlust = False
 
             self.FlurryStacks = 3
             self.StormStrikeStacks = 2
@@ -89,8 +89,10 @@ class Character:
             self.RapidSpeedDuration = 80
             self.ElementalDevastationDuration = 100
             self.UnholyStrengthDuration = 150
+            self.BloodlustDuration = 300
+            self.CritBloodlustDuration = 50
 
-            self.BuffUptimes = {"Flurry" : 0, "StormStrike" : 0, "ElementalStrength" : 0, "RapidSpeed" : 0, "ElementalDevastation" : 0, "UnholyStrength" : 0}
+            self.BuffUptimes = {"Flurry" : 0, "StormStrike" : 0, "ElementalStrength" : 0, "RapidSpeed" : 0, "ElementalDevastation" : 0, "UnholyStrength" : 0, "Bloodlust" : 0}
 
         def checkBuffs(self):
             if self.Flurry: self.checkFlurry()
@@ -99,6 +101,8 @@ class Character:
             if self.RapidSpeed: self.checkRapidSpeed()  
             if self.ElementalDevastation: self.checkElementalDevastation()
             if self.UnholyStrength: self.checkUnholyStrength()
+            if self.Bloodlust: self.checkBloodlust()
+            if self.CritBloodlust: self.checkCritBloodlust()
         
         def checkFlurry(self):
             if self.FlurryStacks == 0:
@@ -142,6 +146,21 @@ class Character:
             else:
                 self.UnholyStrengthDuration -= 1
                 self.BuffUptimes["UnholyStrength"] += 1
+            
+        def checkBloodlust(self):
+            if self.BloodlustDuration == 0:
+                self.CharacterInstance.Haste -= 15
+                self.Bloodlust = False
+            else:
+                self.BloodlustDuration -= 1
+                self.BuffUptimes["Bloodlust"] += 1
+        
+        def checkCritBloodlust(self):
+            if self.CritBloodlustDuration == 0:
+                self.CharacterInstance.Haste -= 5
+                self.CritBloodlust = False
+            else:
+                self.CritBloodlustDuration -= 1
         
         def procFlurry(self):
             if self.Flurry: 
@@ -192,7 +211,16 @@ class Character:
                     self.UnholyStrength = True
                     self.UnholyStrengthDuration = 150
                     self.CharacterInstance.AttackPower += (100*1.05)*2
-
+        
+        def procBloodlust(self):
+            if self.Bloodlust:
+                if self.CritBloodlust:
+                    self.CritBloodlustDuration = 50
+                else:
+                    self.CritBloodlustDuration = 50
+                    self.CritBloodlust = True
+                    self.CharacterInstance.Haste += 5
+                
     class Talents:
         def __init__(self, CharacterInput):
             self.CharacterInstance = CharacterInput
@@ -201,7 +229,8 @@ class Character:
             self.Reverberation = False
             # ENHANCEMENT
             self.WeaponMastery = False
-
+            self.AncestralKnowledge = False
+            self.ElementalWeapons = False
             # RESTORATION ?
 
     class ItemsAndEnchants:
@@ -209,13 +238,12 @@ class Character:
             self.CharacterInstance = CharacterInput
 
     class Attacks:
-
         def __init__(self, CharacterInput):
             self.CharacterInstance = CharacterInput
             self.SwingTimer = 0
             self.AutoAttackStats = {"Glancing Blow": 0, "Miss" : 0, "Dodge" : 0, "Crit" : 0}
             self.DamageCount = {"Auto Attack" : 0, "Earth Shock" : 0, "Stormstrike" : 0, "Lightning Strike" : 0, "Lightning Shield" : 0}
-            self.Cooldowns = {"Earth Shock" : 0, "Stormstrike" : 0, "Lightning Strike" : 0}
+            self.Cooldowns = {"Earth Shock" : 0, "Stormstrike" : 0, "Lightning Strike" : 0, "Bloodlust" : 0}
 
         def WeaponSwing(self):
             WepDmg = np.random.randint(self.CharacterInstance.WepDamage[0],self.CharacterInstance.WepDamage[1])
@@ -227,6 +255,7 @@ class Character:
                     if self.CharacterInstance.DiceRoll() <= self.CharacterInstance.MeleeCrit:
                         Damage *= 2.0
                         self.CharacterInstance.CharacterBuffs.procFlurry()
+                        self.CharacterInstance.CharacterBuffs.procBloodlust()
                         self.CharacterInstance.CharacterBuffs.procElementalDevastation()
                         self.AutoAttackStats["Crit"] += 1
                 case "Spell":
@@ -258,7 +287,7 @@ class Character:
             else: 
                 self.CharacterInstance.CharacterBuffs.procUnholyStrength()
                 Damage = self.CriticalStrike(Damage) 
-                self.Windfury()
+                self.procWepImbue()
             return Damage * self.CharacterInstance.ReducedPhysDmg
             
         def EvaluateSpellAttack(self,Damage):
@@ -273,10 +302,19 @@ class Character:
         def AutoAttack(self):
             if self.CharacterInstance.CharacterBuffs.Flurry: self.CharacterInstance.CharacterBuffs.FlurryStacks -= 1
             Damage = self.EvaluateWhiteAttack(self.WeaponSwing())
-            if Damage != 0: self.Windfury()
+            if Damage != 0: self.procWepImbue()
             self.DamageCount["Auto Attack"] += Damage
             self.SwingTimer = 0
             return Damage
+        
+        def procWepImbue(self):
+            match(self.CharacterInstance.WepImbue.upper()):
+                case "WINDFURY":
+                    self.Windfury()
+                case "FROSTBRAND":
+                    self.Frostbrand()
+                case "FLAMETONGUE":
+                    self.Flametongue()
         
         def Windfury(self):
             WF_PROC = 20 # %
@@ -288,7 +326,19 @@ class Character:
                 Damage += self.EvaluateWhiteAttack(self.WeaponSwing())
                 self.CharacterInstance.AttackPower -= 323
                 self.CharacterInstance.UpdateStats()
-            self.DamageCount["Auto Attack"] += Damage
+            self.DamageCount["Windfury"] += Damage
+            
+        
+        def Frostbrand(self):
+            Damage = 0
+            if self.CharacterInstance.DiceRoll() <= 9/(60/(self.CharacterInstance.WepAttackSpeed/10))*100:
+                Damage = 200 + 0.1 * self.CharacterInstance.SpellPower
+            self.DamageCount["Frostbrand"] += Damage
+            return Damage
+        
+        def Flametongue(self):
+            Damage = (self.CharacterInstance.WepAttackSpeed/10) * 19 + 0.1 * self.CharacterInstance.SpellPower
+            self.DamageCount["Flametongue"] += Damage
             return Damage
             
         def EarthShock(self):
@@ -329,6 +379,18 @@ class Character:
             Damage = self.EvaluateSpellAttack(Damage)
             self.DamageCount["Lightning Shield"] += Damage
             return Damage
+        
+        def Bloodlust(self):
+            self.Cooldowns["Bloodlust"] = 600*5
+            self.CharacterInstance.CharacterBuffs.Bloodlust = True
+            self.CharacterInstance.CharacterBuffs.BloodlustDuration = 300
+            self.CharacterInstance.Haste += 15
+            
+        def ReduceCooldowns(self):
+            if self.Cooldowns["Earth Shock"] > 0: self.Cooldowns["Earth Shock"] -= 1
+            if self.Cooldowns["Stormstrike"] > 0: self.Cooldowns["Stormstrike"] -= 1
+            if self.Cooldowns["Lightning Strike"] > 0: self.Cooldowns["Lightning Strike"] -= 1
+            if self.Cooldowns["Bloodlust"] > 0: self.Cooldowns["Bloodlust"] -= 1
 
     def DiceRoll(self):
         return np.random.randint(1,101)
@@ -345,7 +407,11 @@ class Character:
         if Weapon["WeaponDmg"] is not None: self.BaseWepMin, self.BaseWepMax = Weapon["WeaponDmg"][0], Weapon["WeaponDmg"][1]
         if Weapon["WepSpeed"] is not None: self.WepAttackSpeed = Weapon["WepSpeed"] * 10
         if Weapon["WeaponSkill"] is not None: self.WeaponSkill = Weapon["WeaponSkill"]
-
+        if Weapon["Imbue"] is not None: 
+            self.WepImbue = Weapon["Imbue"]
+            self.CharacterAttacks.DamageCount[self.WepImbue.lower().capitalize()] = 0
+        if self.WepImbue.upper() == "ROCKBITER": self.AttackPower += 554
+        
     def initialize_talents(self, Talents):
         return
         
@@ -369,6 +435,10 @@ def simulate(inputs):
         if Dolph.CharacterAttacks.SwingTimer >= Dolph.AttackSpeed:
             Dolph.CharacterAttacks.AutoAttack()
             
+        if (Dolph.CharacterAttacks.Cooldowns["Bloodlust"] == 0 and GlobalCooldown == 0):
+            Dolph.CharacterAttacks.Bloodlust()
+            GlobalCooldown = GCD
+            
         if (Dolph.CharacterAttacks.Cooldowns["Stormstrike"] == 0 and GlobalCooldown == 0):
             Dolph.CharacterAttacks.StormStrike()
             SS_Count += 1
@@ -386,9 +456,7 @@ def simulate(inputs):
             
         Dolph.CharacterAttacks.SwingTimer += 1
         
-        if Dolph.CharacterAttacks.Cooldowns["Stormstrike"] > 0: Dolph.CharacterAttacks.Cooldowns["Stormstrike"] -= 1
-        if Dolph.CharacterAttacks.Cooldowns["Earth Shock"] > 0: Dolph.CharacterAttacks.Cooldowns["Earth Shock"] -= 1
-        if Dolph.CharacterAttacks.Cooldowns["Lightning Strike"]> 0: Dolph.CharacterAttacks.Cooldowns["Lightning Strike"]-= 1
+        Dolph.CharacterAttacks.ReduceCooldowns()
         
         if GlobalCooldown > 0: GlobalCooldown -= 1
 
@@ -397,7 +465,7 @@ def simulate(inputs):
         Dolph.CharacterAttacks.DamageCount[key] /= SimTime_Deciseconds/10
         TotalDPS += Dolph.CharacterAttacks.DamageCount[key]
     
-    return TotalDPS, Dolph.CharacterAttacks.DamageCount, Dolph.CharacterAttacks.AutoAttackStats, Dolph.CharacterBuffs.BuffUptimes
+    return TotalDPS, Dolph
 
 def Gaussian(x,N,mu,sigma):
     return N * 1.0 / (np.sqrt(2*np.pi) * sigma) * np.exp( -0.5 * (x-mu)**2 / sigma**2)
@@ -432,9 +500,21 @@ def read_input(file):
     
     return sections
 
-
+def write2file(file, NSIM, SIMTIME, DamageCount):
+    out = open(file,"w")
+    out.write("|================ TurtleSim ================|\n\n")
+    out.write(f"Number of simulations: {NSIM}\n")
+    out.write(f"Simulation time [s]: {SIMTIME}\n\n")
+    # Write damage 
+    out.write("--------------- DPS overview ---------------")
+    out.write("\n")
+    for key in DamageCount.keys():
+        out.write(f"{key:<20}   {int(DamageCount[key]):>10}  ({(DamageCount[key]/np.sum(list(DamageCount.values()))):.2%})\n")
+    out.write("--------------------------------------------\n")
+    out.close()
 
 def main():
+    outputfile = sys.argv[1][:-4] + ".out"
     inputs = read_input(sys.argv[1])
     print(inputs)
     NumSims = inputs["Sim"]["NumberSims"]
@@ -445,7 +525,12 @@ def main():
     ES_DMG, SS_DMG, LS_DMG, Shield_DMG, AA_DMG, TOT_DMG = np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims), np.zeros(NumSims)
     for sim in tqdm(range(NumSims)):
         
-        TotalDPS, DamageCounts, AA_Diag, BuffUptimes = simulate(inputs)
+        TotalDPS, Dolph= simulate(inputs)
+        DamageCounts = Dolph.CharacterAttacks.DamageCount
+        AA_Diag = Dolph.CharacterAttacks.AutoAttackStats
+        BuffUptimes = Dolph.CharacterBuffs.BuffUptimes
+        ChosenImbue = Dolph.WepImbue
+        
         sim_DPS[sim] = TotalDPS
         sim_Crits[sim] = AA_Diag["Crit"]
         TOT_DMG[sim], AA_DMG[sim] = TotalDPS, DamageCounts["Auto Attack"]
@@ -480,13 +565,21 @@ def main():
     plt.savefig("Gaussian_DPS.png")
     
     fig, ax = plt.subplots()
-    Sources = np.array(["Auto Attack", "Earth Shock", "Stormstrike", "Lightning Strike", "Lightning Shield"])
+    keys = list(DamageCounts.keys())
+    values = list(DamageCounts.values())
+    sorted_value_index = np.argsort(values)
+    sorted_dict = {keys[i]: values[i] for i in sorted_value_index}
+    
+    Sources = sorted_dict.keys()
     Colors = ["grey","yellow","dodgerblue","darkblue","darkturquoise"]
-    DamageDist = np.array([AA_DMG.mean(), ES_DMG.mean(), SS_DMG.mean(), LS_DMG.mean(), Shield_DMG.mean()])
-    ax.bar(Sources, DamageDist,color=Colors)
+    DamageDist = sorted_dict.values()
+    ax.bar(Sources, DamageDist)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
     plt.tight_layout()
     plt.savefig("DPS_Dist.png")
+    
+    
+    write2file(outputfile, NumSims, SimTime, sorted_dict)
     
 if __name__ == "__main__":
     main()

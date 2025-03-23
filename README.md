@@ -22,9 +22,11 @@ Input files must end with ".inp" in order for TurtleSim to find the files.
 
 A premade input file is included in the repository (input.inp). It includes all available settings.
 
-**Step 2: Run the executable TurtleSim.sh**
+**Step 2: Run the executable TurtleSim**
 
-Running the executable TurtleSim.sh will gather all input files in your current directory.
+Run either TurtleSim.bat (Windows) or TurtleSim.sh (Mac) depending on your OS. 
+
+Running the executable will gather all input files in your current directory.
 
 It will run a simulation on each input file.
 

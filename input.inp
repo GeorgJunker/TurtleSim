@@ -11,8 +11,8 @@ Imbue       : Windfury
 @
 
 @Stats
-<<<<<<< HEAD
 AttackPower : 800
+SpellPower  : 0
 Haste       : 8
 MeleeHit    : 4
 MeleeCrit   : 25

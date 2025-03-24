@@ -1,5 +1,5 @@
 @Sim
-NumberSims  : 100
+NumberSims  : 1000
 Time        : 120
 @
 
@@ -11,7 +11,7 @@ Imbue       : Windfury
 @
 
 @Stats
-AttackPower : 1000
+AttackPower : 800
 Haste       : 8
 MeleeHit    : 4
 MeleeCrit   : 25
@@ -23,6 +23,11 @@ SpellCrit   : 6
 Level       : 63
 Armor       : 3700
 Resistance  : 0
+@
+
+@Relics
+Stonebreaker 	  : False
+Crackling Thunder : False
 @
 
 @Talents

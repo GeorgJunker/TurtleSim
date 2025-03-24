@@ -37,9 +37,10 @@ class Boss:
 
 class Character:
     
-    def __init__(self, Target, Stats, Weapon, Talents, SetBonuses):
+    def __init__(self, Target, Stats, Weapon, Talents, Relics):
         # Set default values
-        self.BaseWepMin, self.BaseWepMax = 1, 2
+        self.BaseWepDmg     = np.zeros(2)
+        self.WepDamage      = np.zeros(2)
         self.WepAttackSpeed = 0
         self.AttackPower    = 0
         self.SpellPower     = 0
@@ -49,11 +50,22 @@ class Character:
         self.MeleeCrit      = 0
         self.SpellCrit      = 0
         self.Haste          = 0
-        self.WepImbue = "Windfury"
+        self.WepImbue       = "Windfury"
+
+        # Check for set bonuses
+        # self.Tier1 = np.zeros()
+        # self.Tier2 = np.zeros()
+        # self.Tier3 = np.zeros()
+        self.CracklingThunder = False
+        self.Stonebreaker     = False
+        if "Stonebreaker" in Relics.keys():
+            if Relics["Stonebreaker"].upper() in ("TRUE", "YES"): self.Stonebreaker = True
+        if "Crackling Thunder" in Relics.keys():
+            if Relics["Crackling Thunder"].upper() in ("TRUE", "YES"): self.CracklingThunder = True
         
         self.CharacterBuffs = self.Buffs(self)
         self.CharacterAttacks = self.Attacks(self)
-        
+
         self.initialize_stats(Stats)
         self.initialize_weapon(Weapon)
         self.initialize_talents(Talents)
@@ -63,7 +75,7 @@ class Character:
         self.DodgeChance = Target.Dodge 
         self.SpellMissChance = Target.SpellMiss - self.SpellHitChance
         self.SpellResistChance = Target.SpellResistance
-        self.GlancingBlowDMG = 0.70 + self.WeaponSkill*0.2
+        self.GlancingBlowDMG = 0.70 + self.WeaponSkill*0.02
         self.GlancingBlowChance = Target.GlancingBlowChance
         self.ReducedPhysDmg = (1 - Target.PhysReduc)
 
@@ -233,10 +245,6 @@ class Character:
             self.ElementalWeapons = False
             # RESTORATION ?
 
-    class ItemsAndEnchants:
-        def __init__(self, CharacterInput):
-            self.CharacterInstance = CharacterInput
-
     class Attacks:
         def __init__(self, CharacterInput):
             self.CharacterInstance = CharacterInput
@@ -354,7 +362,7 @@ class Character:
                 self.CharacterInstance.CharacterBuffs.StormStrikeStacks -= 1
             Damage = (np.random.randint(506,536) + (0.10 * self.CharacterInstance.AttackPower)) * DmgAmp
             self.Cooldowns["Earth Shock"] = 50 
-            self.CharacterInstance.CharacterBuffs.procElementalStrength()
+            if self.CharacterInstance.Stonebreaker: self.CharacterInstance.CharacterBuffs.procElementalStrength()
             Damage = self.EvaluateSpellAttack(Damage)
             self.DamageCount["Earth Shock"] += Damage
             return Damage
@@ -369,7 +377,7 @@ class Character:
         
         def LightningStrike(self):
             AttackCoef = 0.88
-            self.CharacterInstance.CharacterBuffs.procRapidSpeed()
+            if self.CharacterInstance.CracklingThunder: self.CharacterInstance.CharacterBuffs.procRapidSpeed()
             self.PopLightningShield()
             Damage = self.EvaluateYellowAttack(AttackCoef*self.WeaponSwing())
             self.Cooldowns["Lightning Strike"] = 85
@@ -410,24 +418,24 @@ class Character:
         if Stats["SpellCrit"] is not None: self.SpellCrit = Stats["SpellCrit"]
 
     def initialize_weapon(self, Weapon):
-        if Weapon["WeaponDmg"] is not None: self.BaseWepMin, self.BaseWepMax = Weapon["WeaponDmg"][0], Weapon["WeaponDmg"][1]
+        if Weapon["WeaponDmg"] is not None: self.BaseWepDmg = np.array(Weapon["WeaponDmg"])
         if Weapon["WepSpeed"] is not None: self.WepAttackSpeed = Weapon["WepSpeed"] * 10
         if Weapon["WeaponSkill"] is not None: self.WeaponSkill = Weapon["WeaponSkill"]
         if Weapon["Imbue"] is not None: 
             self.WepImbue = Weapon["Imbue"]
-            self.CharacterAttacks.DamageCount[self.WepImbue.lower().capitalize()] = 0
             if self.WepImbue.upper() == "ROCKBITER": self.AttackPower += 554
-        
+        self.CharacterAttacks.DamageCount[self.WepImbue.lower().capitalize()] = 0
+
     def initialize_talents(self, Talents):
         return
         
     def UpdateStats(self):
-        self.WepDamage = (np.array([self.BaseWepMin,self.BaseWepMax]) + (self.AttackPower/14) * (self.WepAttackSpeed/10) )*1.1 # 10% increase from talents
+        self.WepDamage = (self.BaseWepDmg + (self.AttackPower/14) * (self.WepAttackSpeed/10) )*1.1 # 10% increase from talents
         self.AttackSpeed = self.WepAttackSpeed * (1 - self.Haste/100) 
     
 def simulate(inputs):
     Target = Boss(inputs["TargetStats"])
-    Dolph = Character(Target, inputs["Stats"],inputs["Weapon"],inputs["Talents"],inputs["SetBonuses"])
+    Dolph = Character(Target, inputs["Stats"],inputs["Weapon"],inputs["Talents"],inputs["Relics"])
     SS_Count, ES_Count, LS_Count = 0, 0, 0
     GlobalCooldown = 0
     SimTime = inputs["Sim"]["Time"]
